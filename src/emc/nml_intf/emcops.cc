@@ -17,6 +17,7 @@
 
 #include "emc.hh"
 #include "emc_nml.hh"
+#include "tooldata.hh"
 
 EMC_AXIS_STAT::EMC_AXIS_STAT():
 EMC_AXIS_STAT_MSG(EMC_AXIS_STAT_TYPE, sizeof(EMC_AXIS_STAT))
@@ -155,20 +156,28 @@ EMC_TASK_STAT_MSG(EMC_TASK_STAT_TYPE, sizeof(EMC_TASK_STAT))
 EMC_TOOL_STAT::EMC_TOOL_STAT():
 EMC_TOOL_STAT_MSG(EMC_TOOL_STAT_TYPE, sizeof(EMC_TOOL_STAT))
 {
-    int t;
-
     pocketPrepped = 0;
     toolInSpindle = 0;
-
-    for (t = 0; t < CANON_POCKETS_MAX; t++) {
-	toolTable[t].toolno = 0;
-    toolTable[t].pocketno = 0;
-        ZERO_EMC_POSE(toolTable[t].offset);
-	toolTable[t].diameter = 0.0;
-	toolTable[t].orientation = 0;
-	toolTable[t].frontangle = 0.0;
-	toolTable[t].backangle = 0.0;
+#ifdef TOOL_MMAP //{
+    toolTableCurrent.toolno = 0;
+    toolTableCurrent.pocketno = 0;
+    ZERO_EMC_POSE(toolTableCurrent.offset);
+    toolTableCurrent.diameter = 0.0;
+    toolTableCurrent.orientation = 0;
+    toolTableCurrent.frontangle = 0.0;
+    toolTableCurrent.backangle = 0.0;
+#else //}{
+    int idx;
+    for (idx = 0; idx < CANON_POCKETS_MAX; idx++) {
+        toolTable[idx].toolno = 0;
+        toolTable[idx].pocketno = 0;
+        ZERO_EMC_POSE(toolTable[idx].offset);
+        toolTable[idx].diameter = 0.0;
+        toolTable[idx].orientation = 0;
+        toolTable[idx].frontangle = 0.0;
+        toolTable[idx].backangle = 0.0;
     }
+#endif //}
 }
 
 EMC_AUX_STAT::EMC_AUX_STAT():
@@ -208,20 +217,25 @@ EMC_LUBE_STAT_MSG(EMC_LUBE_STAT_TYPE, sizeof(EMC_LUBE_STAT))
 // overload = , since class has array elements
 EMC_TOOL_STAT EMC_TOOL_STAT::operator =(EMC_TOOL_STAT s)
 {
-    int t;
-
     pocketPrepped = s.pocketPrepped;
     toolInSpindle = s.toolInSpindle;
 
-    for (t = 0; t < CANON_POCKETS_MAX; t++) {
-	toolTable[t].toolno = s.toolTable[t].toolno;
-    toolTable[t].pocketno = s.toolTable[t].pocketno;
-	toolTable[t].offset = s.toolTable[t].offset;
-	toolTable[t].diameter = s.toolTable[t].diameter;
-	toolTable[t].frontangle = s.toolTable[t].frontangle;
-	toolTable[t].backangle = s.toolTable[t].backangle;
-	toolTable[t].orientation = s.toolTable[t].orientation;
+#ifdef TOOL_MMAP //{
+    struct CANON_TOOL_TABLE tdata;
+    tdata = tooldata_get(0);
+    toolTableCurrent = tdata;
+#else //}{
+    int idx;
+    for (idx = 0; idx < CANON_POCKETS_MAX; idx++) {
+        toolTable[idx].toolno = s.toolTable[idx].toolno;
+        toolTable[idx].pocketno = s.toolTable[idx].pocketno;
+        toolTable[idx].offset = s.toolTable[idx].offset;
+        toolTable[idx].diameter = s.toolTable[idx].diameter;
+        toolTable[idx].frontangle = s.toolTable[idx].frontangle;
+        toolTable[idx].backangle = s.toolTable[idx].backangle;
+        toolTable[idx].orientation = s.toolTable[idx].orientation;
     }
+#endif //}
 
     return s;
 }

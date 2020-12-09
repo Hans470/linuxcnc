@@ -803,7 +803,7 @@ class LivePlotter:
         limits = soft_limits()
 
         if (   self.stat.tool_offset   != o.last_tool_offset
-            or self.stat.tool_table[0] != o.last_tool):
+            or self.stat.tool_in_spindle != o.last_tool):
             o.redraw_dro()
         if (self.logger.npts != self.lastpts
                 or limits != o.last_limits
@@ -816,7 +816,7 @@ class LivePlotter:
                 or self.stat.rotation_xy != o.last_rotation_xy
                 or self.stat.limit != o.last_limit
                 or self.stat.tool_offset != o.last_tool_offset
-                or self.stat.tool_table[0] != o.last_tool
+                or self.stat.tool_in_spindle != o.last_tool
                 or self.stat.motion_mode != self.last_motion_mode
                 or abs(speed - self.last_speed) > .01):
             o.redraw_soon()
@@ -829,7 +829,7 @@ class LivePlotter:
             o.last_g5x_index = self.stat.g5x_index
             o.last_rotation_xy = self.stat.rotation_xy
             self.last_motion_mode = self.stat.motion_mode
-            o.last_tool = self.stat.tool_table[0]
+            o.last_tool = self.stat.tool_in_spindle
             o.last_tool_offset = self.stat.tool_offset
             o.last_joint_position = self.stat.joint_actual_position
             self.last_speed = speed

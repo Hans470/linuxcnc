@@ -1,0 +1,9 @@
+Notes:
+
+ 1) new directory: emc/tooldata
+    api:           emc/tooldata/tooldata.hh
+
+ 2) removed:
+       emc/iotask/ioControl.cc (can be restored on request)
+       emc/ini/initool.h
+       emc/rs274ngc/tool_parse.*

@@ -28,6 +28,7 @@
 #include "interp_internal.hh"
 #include "rs274ngc_interp.hh"
 #include "units.h"
+#include "tooldata.hh"
 
 /****************************************************************************/
 
@@ -706,34 +707,27 @@ double Interp::find_turn(double x1,      //!< X-coordinate of start point
   return (theta);
 }
 
-int Interp::find_tool_pocket(setup_pointer settings, int toolno, int *pocket)
-{
-    if(!settings->random_toolchanger && toolno == 0) {
-        *pocket = 0;
-        return INTERP_OK;
-    }
-    *pocket = -1;
-    for(int i=0; i<CANON_POCKETS_MAX; i++) {
-        if(settings->tool_table[i].toolno == toolno)
-            *pocket = settings->tool_table[i].pocketno;
-    }
-
-    CHKS((*pocket == -1), (_("Requested tool %d not found in the tool table")), toolno);
-    return INTERP_OK;
-}
-
 int Interp::find_tool_index(setup_pointer settings, int toolno, int *index)
 {
+
+#ifdef TOOL_MMAP //{
+    // special case is included in tooldata_find_index_for_tool()
+#else //}{
     if(!settings->random_toolchanger && toolno == 0) {
         *index = 0;
         return INTERP_OK;
     }
-    *index = -1;
-    for(int i=0; i<CANON_POCKETS_MAX; i++) {
-        if(settings->tool_table[i].toolno == toolno)
-            *index = i;
-    }
+#endif //}
+
+    *index = tooldata_find_index_for_tool(toolno);
 
     CHKS((*index == -1), (_("Requested tool %d not found in the tool table")), toolno);
     return INTERP_OK;
 }
+
+// alternate naming used in interpmodule, python remaps:
+int Interp::find_tool_pocket(setup_pointer settings, int toolno, int *pocket)
+{
+    return find_tool_index(settings, toolno, pocket);
+}
+

@@ -31,7 +31,6 @@
 #include "emc_nml.hh"
 #include "emcglb.h"		// EMC_INIFILE
 
-#include "initool.hh"
 
 #include "py3c/py3c.h"
 #include "python_plugin.hh"
@@ -503,9 +502,6 @@ int Task::emcIoInit()
 	return -1;
     }
 
-    if (0 != iniTool(emc_inifile)) {
-	return -1;
-    }
     // send init command to emcio
     if (forceCommand(&ioInitMsg)) {
 	rcs_print_error("Can't forceCommand(ioInitMsg)\n");
