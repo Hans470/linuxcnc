@@ -24,7 +24,6 @@
 #include "inifile.hh"		// INIFILE
 #include "canon.hh"		// _parameter_file_name
 #include "config.h"		// LINELEN
-#include "tool_parse.h"
 #include <stdio.h>    /* gets, etc. */
 #include <stdlib.h>   /* exit       */
 #include <string.h>   /* strcpy     */
@@ -39,6 +38,7 @@
 #include <rtapi_string.h>
 
 #include <saicanon.hh>
+#include "tooldata.hh"
 
 InterpBase *pinterp;
 #define interp_new (*pinterp)
@@ -337,7 +337,12 @@ int read_tool_file(  /* ARGUMENTS         */
       tool_file_name = buffer;
     }
 
+#ifdef TOOL_MMAP //{
+  // no toolTable[] param used
+  return loadToolTable(tool_file_name, 0, 0);
+#else //}{
   return loadToolTable(tool_file_name, _sai._tools, 0, 0);
+#endif //}
 }
 
 /************************************************************************/
@@ -561,6 +566,18 @@ int main (int argc, char ** argv)
   SET_PARAMETER_FILE_NAME(default_name);
   _outfile = stdout; /* may be reset below */
   go_flag = 0;
+
+#ifdef TOOL_MMAP //{
+  const int random_toolchanger = 0;
+  tool_mmap_creator((EMC_TOOL_STAT*)NULL,random_toolchanger);
+  /* Notes:
+  **   1) sai does not use toolInSpindle,pocketPrepped
+  **   2) sai does not distinguish changer type
+  */
+#else //}{
+  int *last_idx = 0; // Note: sai does not use last_idx
+  tool_nml_register((CANON_TOOL_TABLE*)& _sai._tools,last_idx);
+#endif //}
 
   while(1) {
       int c = getopt(argc, argv, "p:t:v:bsn:gi:l:T");

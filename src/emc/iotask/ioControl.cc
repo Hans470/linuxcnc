@@ -52,11 +52,12 @@
 ********************************************************************/
 
 #include <stdio.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <ctype.h>
-
 #include "hal.h"                /* access to HAL functions/definitions */
 #include "rtapi.h"                /* rtapi_print_msg */
 #include "rcs.hh"                /* RCS_CMD_CHANNEL */
@@ -64,12 +65,24 @@
 #include "emc_nml.hh"
 #include "emcglb.h"                /* EMC_NMLFILE, EMC_INIFILE, TOOL_TABLE_FILE */
 #include "inifile.hh"                /* INIFILE */
-#include "initool.hh"                /* iniTool() */
 #include "nml_oi.hh"
 #include "timer.hh"
 #include "rcs_print.hh"
-#include "tool_parse.h"
 #include <rtapi_string.h>
+#include "tooldata.hh"
+
+// accomodate differing number of params:
+#ifdef TOOL_MMAP //{
+  #define LOADTABLE(    fname,tbl,comments,ran) \
+          loadToolTable(fname,    comments,ran)
+  #define SAVETABLE(    fname,tbl,comments,ran) \
+          saveToolTable(fname,    comments,ran)
+#else //}{
+  #define LOADTABLE(    fname,tbl,comments,ran) \
+          loadToolTable(fname,tbl,comments,ran)
+  #define SAVETABLE(    fname,tbl,comments,ran) \
+          saveToolTable(fname,tbl,comments,ran)
+#endif //}
 
 static RCS_CMD_CHANNEL *emcioCommandBuffer = 0;
 static RCS_CMD_MSG *emcioCommand = 0;
@@ -77,9 +90,9 @@ static RCS_STAT_CHANNEL *emcioStatusBuffer = 0;
 static EMC_IO_STAT emcioStatus;
 static NML *emcErrorBuffer = 0;
 
+static char io_tool_table_file[LINELEN] = "tool.tbl"; // default
 static char *ttcomments[CANON_POCKETS_MAX];
 static int random_toolchanger = 0;
-
 
 struct iocontrol_str {
     hal_bit_t *user_enable_out;        /* output, TRUE when EMC wants stop */
@@ -189,6 +202,10 @@ static int iniLoad(const char *filename)
     /* Open the ini file */
     if (inifile.Open(filename) == false) {
         return -1;
+    }
+
+    if (NULL != (inistring = inifile.Find("TOOL_TABLE", "EMCIO"))) {
+        strncpy(io_tool_table_file, inistring, sizeof(io_tool_table_file)-1);
     }
 
     if (NULL != (inistring = inifile.Find("DEBUG", "EMC"))) {
@@ -523,47 +540,54 @@ int read_hal_inputs(void)
     return retval;
 }
 
-void load_tool(int pocket) {
+void load_tool(int idx) {
+    CANON_TOOL_TABLE tdata;
     if(random_toolchanger) {
-        // swap the tools between the desired pocket and the spindle pocket
-        CANON_TOOL_TABLE temp;
         char *comment_temp;
+        // swap the tools between the desired pocket and the spindle pocket
 
-        temp = emcioStatus.tool.toolTable[0];
-        emcioStatus.tool.toolTable[0] = emcioStatus.tool.toolTable[pocket];
-        emcioStatus.tool.toolTable[pocket] = temp;
+        CANON_TOOL_TABLE  tzero   = tooldata_get(0);
+        CANON_TOOL_TABLE  tpocket = tooldata_get(idx);
+        tooldata_put(tzero,  idx); // spindle-->pocket
+        tooldata_put(tpocket,0  ); // pocket-->spindle
 
         comment_temp = ttcomments[0];
-        ttcomments[0] = ttcomments[pocket];
-        ttcomments[pocket] = comment_temp;
+        ttcomments[0] = ttcomments[idx];
+        ttcomments[idx] = comment_temp;
 
-        if (0 != saveToolTable(tool_table_file, emcioStatus.tool.toolTable, ttcomments, random_toolchanger))
+        if (0 != SAVETABLE(io_tool_table_file, emcioStatus.tool.toolTable,
+                           ttcomments, random_toolchanger)) {
             emcioStatus.status = RCS_ERROR;
-    } else if(pocket == 0) {
+        }
+    } else if(idx == 0) {
         // on non-random tool-changers, asking for pocket 0 is the secret
         // handshake for "unload the tool from the spindle"
-        emcioStatus.tool.toolTable[0].toolno = 0;
-        ZERO_EMC_POSE(emcioStatus.tool.toolTable[0].offset);
-        emcioStatus.tool.toolTable[0].diameter = 0.0;
-        emcioStatus.tool.toolTable[0].frontangle = 0.0;
-        emcioStatus.tool.toolTable[0].backangle = 0.0;
-        emcioStatus.tool.toolTable[0].orientation = 0;
+        tdata.toolno = 0;
+        tdata.pocketno = 0;
+        ZERO_EMC_POSE(tdata.offset);
+        tdata.diameter = 0.0;
+        tdata.frontangle = 0.0;
+        tdata.backangle = 0.0;
+        tdata.orientation = 0;
+        tooldata_put(tdata,0);
     } else {
         // just copy the desired tool to the spindle
-        emcioStatus.tool.toolTable[0] = emcioStatus.tool.toolTable[pocket];
+        tdata = tooldata_get(idx);
+        tooldata_put(tdata,0);
     }
 }
 
 void reload_tool_number(int toolno) {
+    CANON_TOOL_TABLE tdata;
     if(random_toolchanger) return; // doesn't need special handling here
-    for(int i=1; i<CANON_POCKETS_MAX; i++) {
-        if(emcioStatus.tool.toolTable[i].toolno == toolno) {
-            load_tool(i);
+    for(int idx = 1; idx <= tooldata_last_index_get(); idx++) { //note <=
+        tdata = tooldata_get(idx);
+        if(tdata.toolno == toolno) {
+            load_tool(idx);
             break;
         }
     }
 }
-
 
 /********************************************************************
 *
@@ -593,7 +617,8 @@ int read_tool_inputs(void)
             emcioStatus.tool.toolInSpindle = 0;
         } else {
             // the tool now in the spindle is the one that was prepared
-            emcioStatus.tool.toolInSpindle = emcioStatus.tool.toolTable[emcioStatus.tool.pocketPrepped].toolno; 
+            CANON_TOOL_TABLE tdata = tooldata_get(emcioStatus.tool.pocketPrepped);
+            emcioStatus.tool.toolInSpindle = tdata.toolno; 
         }
         *(iocontrol_data->tool_number) = emcioStatus.tool.toolInSpindle; //likewise in HAL
         load_tool(emcioStatus.tool.pocketPrepped);
@@ -630,9 +655,19 @@ static void do_hal_exit(void) {
 ********************************************************************/
 int main(int argc, char *argv[])
 {
+#ifdef TOOL_MMAP //{
+    fprintf(stderr,"%8d IO: TOOLTABLE:mmap\n",getpid());
+#else //}{
+    fprintf(stderr,"%8d IO: TOOLTABLE:nml\n",getpid());
+#endif //}
+
+    fprintf(stderr,"         EMC_STAT      size=%8ld\n",sizeof(EMC_STAT));
+    fprintf(stderr,"         EMC_IO_STAT   size=%8ld\n",sizeof(EMC_IO_STAT));
+    fprintf(stderr,"         EMC_TOOL_STAT size=%8ld\n",sizeof(EMC_TOOL_STAT));
+    fprintf(stderr,"         CANON_POCKETS_MAX =%8d\n",CANON_POCKETS_MAX);
+
     int t, tool_status;
     NMLTYPE type;
-
     for (t = 1; t < argc; t++) {
         if (!strcmp(argv[t], "-ini")) {
             if (t == argc - 1) {
@@ -662,6 +697,9 @@ int main(int argc, char *argv[])
     }
 
     atexit(do_hal_exit);
+#ifdef TOOL_MMAP //{
+    atexit(tool_mmap_close);
+#endif //}
 
     if (0 != iniLoad(emc_inifile)) {
         rtapi_print_msg(RTAPI_MSG_ERR, "can't open ini file %s\n",
@@ -675,40 +713,52 @@ int main(int argc, char *argv[])
                         emc_nmlfile);
         return -1;
     }
+#if 0
     // used only for getting TOOL_TABLE_FILE out of the ini file
     if (0 != iniTool(emc_inifile)) {
         rcs_print_error("iniTool failed.\n");
         return -1;
     }
+#endif
 
     for(int i=0; i<CANON_POCKETS_MAX; i++) {
         ttcomments[i] = (char *)malloc(CANON_TOOL_ENTRY_LEN);
     }
 
+    // io process must be started before task
+#ifdef TOOL_MMAP //{
+    tool_mmap_creator((EMC_TOOL_STAT*)&(emcioStatus.tool), random_toolchanger);
+#else //}{
+    fprintf(stderr,"IO: REGISTER %p\n",(CANON_TOOL_TABLE*)&(emcioStatus.tool.toolTable));
+    tool_nml_register( (CANON_TOOL_TABLE*)&(emcioStatus.tool.toolTable),
+                       &(emcioStatus.tool.last_idx) );
+#endif //}
 
     // on nonrandom machines, always start by assuming the spindle is empty
     if(!random_toolchanger) {
-        emcioStatus.tool.toolTable[0].toolno = -1;
-        ZERO_EMC_POSE(emcioStatus.tool.toolTable[0].offset);
-        emcioStatus.tool.toolTable[0].diameter = 0.0;
-        emcioStatus.tool.toolTable[0].frontangle = 0.0;
-        emcioStatus.tool.toolTable[0].backangle = 0.0;
-        emcioStatus.tool.toolTable[0].orientation = 0;
+        CANON_TOOL_TABLE tdata;
         ttcomments[0][0] = '\0';
+        tdata.pocketno=0;
+        tdata.toolno = -1;
+        ZERO_EMC_POSE(tdata.offset);
+        tdata.diameter = 0.0;
+        tdata.frontangle = 0.0;
+        tdata.backangle = 0.0;
+        tdata.orientation = 0;
+        tooldata_put(tdata,0);
     }
-
-    if (0 != loadToolTable(tool_table_file, emcioStatus.tool.toolTable,
-                ttcomments, random_toolchanger)) {
+    if (0 != LOADTABLE(io_tool_table_file, emcioStatus.tool.toolTable,
+                       ttcomments, random_toolchanger)) {
         rcs_print_error("can't load tool table.\n");
     }
-
     done = 0;
 
     /* set status values to 'normal' */
     emcioStatus.aux.estop = 1; //estop=1 means to emc that ESTOP condition is met
     emcioStatus.tool.pocketPrepped = -1;
     if (random_toolchanger) {
-        emcioStatus.tool.toolInSpindle = emcioStatus.tool.toolTable[0].toolno;
+        CANON_TOOL_TABLE tdata = tooldata_get(0);
+        emcioStatus.tool.toolInSpindle = tdata.toolno;
     } else {
         emcioStatus.tool.toolInSpindle = 0;
     }
@@ -770,9 +820,8 @@ int main(int argc, char *argv[])
             break;
 
         case EMC_TOOL_INIT_TYPE:
-            rtapi_print_msg(RTAPI_MSG_DBG, "EMC_TOOL_INIT\n");
-            loadToolTable(tool_table_file, emcioStatus.tool.toolTable,
-                    ttcomments, random_toolchanger);
+            LOADTABLE(io_tool_table_file, emcioStatus.tool.toolTable,
+                      ttcomments, random_toolchanger);
             reload_tool_number(emcioStatus.tool.toolInSpindle);
             break;
 
@@ -794,28 +843,31 @@ int main(int argc, char *argv[])
 
         case EMC_TOOL_PREPARE_TYPE:
             {
-                int p = 0;
-                int t = ((EMC_TOOL_PREPARE*)emcioCommand)->tool;
-                for(int i = 0;i < CANON_POCKETS_MAX;i++){
-                    if(emcioStatus.tool.toolTable[i].toolno == t)
-                        p = i;
-                }
-                rtapi_print_msg(RTAPI_MSG_DBG, "EMC_TOOL_PREPARE tool=%d pocket=%d\n", t, p);
-
-                // Set HAL pins/params for tool number, pocket, and index.
-                iocontrol_data->tool_prep_index = p;
-                *(iocontrol_data->tool_prep_pocket) = random_toolchanger? p: emcioStatus.tool.toolTable[p].pocketno;
-                if(!random_toolchanger && p == 0) {//unload spindle
-                    *(iocontrol_data->tool_prep_number) = 0;
-                                        *(iocontrol_data->tool_prep_pocket) = 0;
+                int idx = 0;
+                int toolno = ((EMC_TOOL_PREPARE*)emcioCommand)->tool;
+                CANON_TOOL_TABLE tdata;
+                idx   = tooldata_find_index_for_tool(toolno);
+                if (idx == -1) {  // not found
+                   emcioStatus.tool.pocketPrepped = -1;
                 } else {
-                    *(iocontrol_data->tool_prep_number) = emcioStatus.tool.toolTable[p].toolno;
-                }
+                    tdata = tooldata_get(idx);
+                    rtapi_print_msg(RTAPI_MSG_DBG, "EMC_TOOL_PREPARE tool=%d idx=%d\n", t, idx);
 
-                // it doesn't make sense to prep the spindle pocket
-                if (random_toolchanger && p == 0) {
-                    emcioStatus.tool.pocketPrepped = 0;
-                    break;
+                    // Set HAL pins/params for tool number, pocket, and index.
+                    iocontrol_data->tool_prep_index = idx;
+                    *(iocontrol_data->tool_prep_pocket) = random_toolchanger? idx: tdata.pocketno;
+
+                    if(!random_toolchanger && idx == 0) {//unload spindle
+                        *(iocontrol_data->tool_prep_number) = 0;
+                        *(iocontrol_data->tool_prep_pocket) = 0;
+                    } else {
+                        *(iocontrol_data->tool_prep_number) = tdata.toolno;
+                    }
+                    // it doesn't make sense to prep the spindle pocket
+                    if (random_toolchanger && idx == 0) {
+                        emcioStatus.tool.pocketPrepped = 0;
+                        break;
+                    }
                 }
 
                 /* then set the prepare pin to tell external logic to get started */
@@ -826,18 +878,19 @@ int main(int argc, char *argv[])
                     emcioStatus.status = RCS_EXEC;
             }
             break;
-
         case EMC_TOOL_LOAD_TYPE:
             rtapi_print_msg(RTAPI_MSG_DBG, "EMC_TOOL_LOAD loaded=%d prepped=%d\n", emcioStatus.tool.toolInSpindle, emcioStatus.tool.pocketPrepped);
 
+        {
             // it doesn't make sense to load a tool from the spindle pocket
             if (random_toolchanger && emcioStatus.tool.pocketPrepped == 0) {
                 break;
             }
 
             // it's not necessary to load the tool already in the spindle
-            if (!random_toolchanger && emcioStatus.tool.pocketPrepped > 0 &&
-                emcioStatus.tool.toolInSpindle == emcioStatus.tool.toolTable[emcioStatus.tool.pocketPrepped].toolno) {
+            CANON_TOOL_TABLE tdata = tooldata_get(emcioStatus.tool.pocketPrepped);
+            if (!random_toolchanger && (emcioStatus.tool.pocketPrepped > 0) &&
+                (emcioStatus.tool.toolInSpindle == tdata.toolno) ) {
                 break;
             }
 
@@ -853,7 +906,7 @@ int main(int argc, char *argv[])
                     emcioStatus.status = RCS_EXEC;
             }
             break;
-
+        }
         case EMC_TOOL_UNLOAD_TYPE:
             rtapi_print_msg(RTAPI_MSG_DBG, "EMC_TOOL_UNLOAD\n");
             emcioStatus.tool.toolInSpindle = 0;
@@ -863,62 +916,65 @@ int main(int argc, char *argv[])
             {
                 const char *filename =
                     ((EMC_TOOL_LOAD_TOOL_TABLE *) emcioCommand)->file;
-                if(!strlen(filename)) filename = tool_table_file;
+                if(!strlen(filename)) filename = io_tool_table_file;
                 rtapi_print_msg(RTAPI_MSG_DBG, "EMC_TOOL_LOAD_TOOL_TABLE\n");
-                if (0 != loadToolTable(filename, emcioStatus.tool.toolTable,
-                                  ttcomments, random_toolchanger))
+                if (0 != LOADTABLE(filename, emcioStatus.tool.toolTable,
+                                  ttcomments, random_toolchanger)) {
                     emcioStatus.status = RCS_ERROR;
-                else
+                } else {
                     reload_tool_number(emcioStatus.tool.toolInSpindle);
+                }
             }
             break;
-
         case EMC_TOOL_SET_OFFSET_TYPE: 
             {
-                int p, t, o;
+                int idx, toolno, o;
                 double d, f, b;
                 EmcPose offs;
 
-                p = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->pocket;
-                t = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->toolno;
-                offs = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->offset;
+                idx    = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->pocket;
+                toolno = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->toolno;
+                offs   = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->offset;
                 d = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->diameter;
                 f = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->frontangle;
                 b = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->backangle;
                 o = ((EMC_TOOL_SET_OFFSET *) emcioCommand)->orientation;
 
                 rtapi_print_msg(RTAPI_MSG_DBG,
-                                "EMC_TOOL_SET_OFFSET pocket=%d toolno=%d zoffset=%lf, xoffset=%lf, diameter=%lf,"
+                                "EMC_TOOL_SET_OFFSET idx=%d toolno=%d zoffset=%lf, xoffset=%lf, diameter=%lf,"
                                 " frontangle=%lf, backangle=%lf, orientation=%d\n",
-                                p, t, offs.tran.z, offs.tran.x, d, f, b, o);
-
-                emcioStatus.tool.toolTable[p].toolno = t;
-                emcioStatus.tool.toolTable[p].offset = offs;
-                emcioStatus.tool.toolTable[p].diameter = d;
-                emcioStatus.tool.toolTable[p].frontangle = f;
-                emcioStatus.tool.toolTable[p].backangle = b;
-                emcioStatus.tool.toolTable[p].orientation = o;
-
-                if (emcioStatus.tool.toolInSpindle == t) {
-                    emcioStatus.tool.toolTable[0] = emcioStatus.tool.toolTable[p];
-                }                    
+                                idx, toolno, offs.tran.z, offs.tran.x, d, f, b, o);
+                CANON_TOOL_TABLE tdata = tooldata_get(idx);
+                tdata.toolno = toolno;
+                tdata.offset = offs;
+                tdata.diameter = d;
+                tdata.frontangle = f;
+                tdata.backangle = b;
+                tdata.orientation = o;
+                tooldata_put(tdata,idx);
             }
-            if (0 != saveToolTable(tool_table_file, emcioStatus.tool.toolTable, ttcomments, random_toolchanger))
+            if (0 != SAVETABLE(io_tool_table_file, emcioStatus.tool.toolTable,
+                                ttcomments, random_toolchanger)) {
                 emcioStatus.status = RCS_ERROR;
-            break;
-
-        case EMC_TOOL_SET_NUMBER_TYPE:
-            {
-                int pocket_number;
-                
-                pocket_number = ((EMC_TOOL_SET_NUMBER *) emcioCommand)->tool;
-                rtapi_print_msg(RTAPI_MSG_DBG, "EMC_TOOL_SET_NUMBER old_loaded_tool=%d new_pocket_number=%d new_tool=%d\n", emcioStatus.tool.toolInSpindle, pocket_number, emcioStatus.tool.toolTable[pocket_number].toolno);
-                load_tool(pocket_number);
-                emcioStatus.tool.toolInSpindle = emcioStatus.tool.toolTable[pocket_number].toolno;
-                *(iocontrol_data->tool_number) = emcioStatus.tool.toolInSpindle; //likewise in HAL
             }
             break;
 
+        case EMC_TOOL_SET_NUMBER_TYPE: //m61q-
+            {
+                int idx;
+                
+                idx = ((EMC_TOOL_SET_NUMBER *) emcioCommand)->tool;
+                CANON_TOOL_TABLE tdata = tooldata_get(idx);
+                rtapi_print_msg(RTAPI_MSG_DBG,
+                     "EMC_TOOL_SET_NUMBER old_loaded_tool=%d new_idx_number=%d new_tool=%d\n"
+                     , emcioStatus.tool.toolInSpindle, idx, tdata.toolno);
+                load_tool(idx);
+                tdata = tooldata_get(idx);
+                emcioStatus.tool.toolInSpindle = tdata.toolno;
+                *(iocontrol_data->tool_number) = emcioStatus.tool.toolInSpindle; //likewise in HAL
+                tooldata_put(tdata,  0);
+            }
+            break;
 
         case EMC_COOLANT_MIST_ON_TYPE:
             rtapi_print_msg(RTAPI_MSG_DBG, "EMC_COOLANT_MIST_ON\n");

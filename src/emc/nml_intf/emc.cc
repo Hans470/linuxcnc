@@ -901,9 +901,12 @@ void EMC_TOOL_STAT::update(CMS * cms)
     EMC_TOOL_STAT_MSG::update(cms);
     cms->update(pocketPrepped);
     cms->update(toolInSpindle);
+#ifdef TOOL_MMAP //{
+    // noop
+#else //}{
     for (int i_toolTable = 0; i_toolTable < CANON_POCKETS_MAX; i_toolTable++)
 	CANON_TOOL_TABLE_update(cms, &(toolTable[i_toolTable]));
-
+#endif //}
 }
 
 /*

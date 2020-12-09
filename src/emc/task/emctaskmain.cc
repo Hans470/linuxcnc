@@ -60,6 +60,7 @@
 #include <locale.h>
 #include "usrmotintf.h"
 #include <rtapi_string.h>
+#include "tooldata.hh"
 
 #if 0
 // Enable this to niftily trap floating point exceptions for debugging
@@ -3322,6 +3323,12 @@ int main(int argc, char *argv[])
     // moved up from emc_startup so we can expose it in Python right away
     emcStatus = new EMC_STAT;
 
+#ifdef TOOL_MMAP //{
+    tool_mmap_user();
+#else //}{
+    tool_nml_register( (CANON_TOOL_TABLE*)&emcStatus->io.tool.toolTable,
+                        &emcStatus->io.tool.last_idx);
+#endif //}
     // get the Python plugin going
 
     // inistantiate task methods object, too

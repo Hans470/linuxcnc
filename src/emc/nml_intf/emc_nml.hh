@@ -1665,7 +1665,13 @@ class EMC_TOOL_STAT:public EMC_TOOL_STAT_MSG {
 
     int pocketPrepped;		// pocket ready for loading from
     int toolInSpindle;		// tool loaded, 0 is no tool
+#ifdef TOOL_MMAP //{
+    CANON_TOOL_TABLE toolTableCurrent; //current tool data
+#else //}{
+    int last_idx;
     CANON_TOOL_TABLE toolTable[CANON_POCKETS_MAX];
+#endif //}
+
 };
 
 // EMC_AUX type declarations

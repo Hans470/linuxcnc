@@ -34,6 +34,10 @@
 #include "nml_oi.hh"
 #include "rcs_print.hh"
 #include <rtapi_string.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include "tooldata.hh"
 
 #include <cmath>
 
@@ -285,6 +289,18 @@ static bool check_stat(RCS_STAT_CHANNEL *emcStatusBuffer) {
 }
 
 static PyObject *poll(pyStatChannel *s, PyObject *o) {
+#ifdef TOOL_MMAP //{
+    static int once=1; if (once) { tool_mmap_user();once=0;}
+#else //}{
+    static int once=1;
+    if (once) {
+      fprintf(stderr,"%8d AXIS tool_nml_register %p\n",getpid(),
+              (void*)&s->status.io.tool.toolTable);
+      tool_nml_register( (CANON_TOOL_TABLE*)&s->status.io.tool.toolTable,
+                          &s->status.io.tool.last_idx);
+      once=0;
+    }
+#endif //}
     if(!check_stat(s->c)) return NULL;
     if(s->c->peek() == EMC_STAT_TYPE) {
         EMC_STAT *emcStatus = static_cast<EMC_STAT*>(s->c->get_address());
@@ -661,8 +677,12 @@ static PyTypeObject ToolResultType;
 static PyObject *Stat_tool_table(pyStatChannel *s) {
     PyObject *res = PyTuple_New(CANON_POCKETS_MAX);
     int j=0;
-    for(int i=0; i<CANON_POCKETS_MAX; i++) {
-        struct CANON_TOOL_TABLE &t = s->status.io.tool.toolTable[i];
+
+    int idxmax = tooldata_last_index_get() + 1;
+
+    for(int idx=0; idx < idxmax; idx++) {
+        struct CANON_TOOL_TABLE tdata=tooldata_get(idx);
+        struct CANON_TOOL_TABLE &t = tdata;
         PyObject *tool = PyStructSequence_New(&ToolResultType);
         PyStructSequence_SET_ITEM(tool, 0, PyInt_FromLong(t.toolno));
         PyStructSequence_SET_ITEM(tool, 1, PyFloat_FromDouble(t.offset.tran.x));
