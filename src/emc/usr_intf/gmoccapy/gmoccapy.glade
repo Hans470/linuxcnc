@@ -146,6 +146,16 @@
     <signal name="value-changed" handler="on_adj_y_pos_popup_value_changed" swapped="no"/>
   </object>
   <object class="GtkTextBuffer" id="alarm_buffer"/>
+  <object class="GtkImage" id="edit-redo">
+    <property name="visible">True</property>
+    <property name="can_focus">False</property>
+    <property name="stock">gtk-redo</property>
+  </object>
+  <object class="GtkImage" id="edit-undo">
+    <property name="visible">True</property>
+    <property name="can_focus">False</property>
+    <property name="stock">gtk-undo</property>
+  </object>
   <object class="GtkFileFilter" id="ff_file_to_load"/>
   <object class="GtkFileFilter" id="filefilter1"/>
   <object class="EMC_Action_Open" id="hal_action_open"/>
@@ -263,7 +273,7 @@
   <object class="GtkImage" id="img_jump_to">
     <property name="visible">True</property>
     <property name="can_focus">False</property>
-    <property name="stock">gtk-jump-to</property>
+    <property name="icon_name">folder</property>
   </object>
   <object class="GtkImage" id="img_machine_on">
     <property name="visible">True</property>
@@ -456,6 +466,16 @@
         <col id="0">test2</col>
       </row>
     </data>
+  </object>
+  <object class="GtkImage" id="search">
+    <property name="visible">True</property>
+    <property name="can_focus">False</property>
+    <property name="stock">gtk-find</property>
+  </object>
+  <object class="GtkImage" id="search_replace">
+    <property name="visible">True</property>
+    <property name="can_focus">False</property>
+    <property name="stock">gtk-find-and-replace</property>
   </object>
   <object class="EMC_Action_Save" id="hal_action_save">
     <property name="textview">gcode_view</property>
@@ -1180,7 +1200,7 @@
                                 <child>
                                   <placeholder/>
                                 </child>
-                              </object>
+                               </object>
                               <packing>
                                 <property name="expand">True</property>
                                 <property name="fill">True</property>
@@ -3509,11 +3529,11 @@
                             <property name="n_columns">16</property>
                             <child>
                               <object class="GtkButton" id="btn_undo">
-                                <property name="label" translatable="yes">Undo</property>
                                 <property name="height_request">48</property>
                                 <property name="visible">True</property>
                                 <property name="can_focus">False</property>
                                 <property name="receives_default">False</property>
+                                <property name="image">edit-undo</property>
                                 <signal name="clicked" handler="on_btn_undo_clicked" swapped="no"/>
                               </object>
                               <packing>
@@ -3540,12 +3560,12 @@
                             </child>
                             <child>
                               <object class="GtkButton" id="btn_search_forward">
-                                <property name="label" translatable="yes">Search
-  fwd</property>
                                 <property name="height_request">48</property>
                                 <property name="visible">True</property>
                                 <property name="can_focus">False</property>
                                 <property name="receives_default">False</property>
+                                <property name="image">search</property>
+                                <property name="image_position">right</property>
                                 <signal name="clicked" handler="on_btn_search_forward_clicked" swapped="no"/>
                               </object>
                               <packing>
@@ -3557,11 +3577,11 @@
                             </child>
                             <child>
                               <object class="GtkButton" id="btn_redo">
-                                <property name="label" translatable="yes">Redo</property>
                                 <property name="height_request">48</property>
                                 <property name="visible">True</property>
                                 <property name="can_focus">False</property>
                                 <property name="receives_default">False</property>
+                                <property name="image">edit-redo</property>
                                 <signal name="clicked" handler="on_btn_redo_clicked" swapped="no"/>
                               </object>
                               <packing>
@@ -3644,11 +3664,11 @@
                             </child>
                             <child>
                               <object class="GtkButton" id="btn_replace">
-                                <property name="label" translatable="yes">Replace</property>
                                 <property name="height_request">48</property>
                                 <property name="visible">True</property>
                                 <property name="can_focus">False</property>
                                 <property name="receives_default">False</property>
+                                <property name="image">search_replace</property>
                                 <signal name="clicked" handler="on_btn_replace_clicked" swapped="no"/>
                               </object>
                               <packing>
@@ -7593,7 +7613,7 @@ F12 or $ key does the same</property>
                       <object class="GtkImage" id="img_save">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="icon_name">document-save</property>
+                        <property name="pixbuf">images/save.png</property>
                       </object>
                     </child>
                   </object>
@@ -7616,7 +7636,7 @@ F12 or $ key does the same</property>
                       <object class="GtkImage" id="img_save_as">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="icon_name">document-save-as</property>
+                        <property name="pixbuf">images/save-as.png</property>
                       </object>
                     </child>
                   </object>
