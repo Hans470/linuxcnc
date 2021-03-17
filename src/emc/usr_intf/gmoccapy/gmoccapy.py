@@ -465,6 +465,14 @@ class gmoccapy(object):
         # 
         self._sensitize_widgets(widgetlist, False)
 
+        print("CHECKING LIMITS.....")
+        for axis in self.axis_list:
+            axisnumber = "xyzabcuvw".index(axis)
+            if self.stat.limit[axisnumber] != 0:
+                print("INITIAL LIMIT TRIPPED")
+                self.widgets.chk_ignore_limits.set_active(True)
+                self.widgets.chk_ignore_limits.set_sensitive(True)
+
         # this must be done last, otherwise we will get wrong values
         # because the window is not fully realized
         self._init_notification()
@@ -2540,6 +2548,7 @@ class gmoccapy(object):
         self.widgets.chk_ignore_limits.set_active(state)
 
     def on_hal_status_limits_tripped(self, object, state, lst_limits):
+        print("LIMIT TRIPPED")
         # object = hal_status from glade file
         # state = true if limit has been tripped
         # lst_limits = list of joint limits that has been tripped ([0,0],[0,1],[0,0])
