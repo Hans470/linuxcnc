@@ -285,12 +285,12 @@ proc makeShow {} {
     pack $f2 -fill x -expand 0
     pack [frame $f2.b] \
          -side top -fill x -anchor w
-    pack [label $f2.b.label -text [msgcat::mc "Test HAL command :"] ]\
+    pack [label .label -text [msgcat::mc "Test HAL command :"] ]\
          -side left -padx 5 -pady 3
-    set com [entry $f2.b.entry -textvariable halcommand]
+    set com [entry .entry -textvariable halcommand]
     pack $com -side left -fill x -expand 1 -pady 3
     bind $com <KeyPress-Return> {showEx $halcommand}
-    set ex [button $f2.b.execute -text [msgcat::mc "Execute"] \
+    set ex [button .execute -text [msgcat::mc "Execute"] \
             -command {showEx $halcommand} ]
     pack $ex -side left -padx 5 -pady 3
 
